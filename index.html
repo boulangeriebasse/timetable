@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ライブイベント タイムテーブル自動生成</title>
+    <!-- Tailwind CSS CDNをロード -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* カスタムスタイル */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f7f7;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1024px;
+        }
+        .shadow-custom {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+    <div class="container mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-extrabold text-gray-800">🎸ライブハウスタイムテーブルメーカー🎙️</h1>
+            <p class="mt-2 text-gray-600">基本的なパラメーターを入力して、RH・本番のスケジュールを自動生成します。</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:col-span-3 gap-8">
+            <!-- 設定入力エリア (1/3 or full) -->
+            <div class="lg:col-span-1" id="settings-container">
+                <div class="bg-white p-6 rounded-xl shadow-custom sticky top-8">
+                    <h2 class="text-xl font-bold mb-4 border-b pb-2 text-indigo-700">🗓️ イベント設定</h2>
+                    <form id="settings-form" onchange="calculateSchedule()">
+
+                        <!-- イベント基本情報 -->
+                        <fieldset class="mb-6 p-4 border border-gray-200 rounded-lg">
+                            <legend class="text-sm font-semibold px-2 text-gray-700">基本時間設定</legend>
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="openTime" class="block text-sm font-medium text-gray-700">オープン時間</label>
+                                    <input type="time" id="openTime" value="18:00" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                </div>
+                                <div>
+                                    <label for="startTime" class="block text-sm font-medium text-gray-700">スタート時間</label>
+                                    <input type="time" id="startTime" value="18:30" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <!-- 出演バンド情報 -->
+                        <fieldset class="mb-6 p-4 border border-gray-200 rounded-lg">
+                            <legend class="text-sm font-semibold px-2 text-gray-700">バンド情報・時間配分</legend>
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="bandCount" class="block text-sm font-medium text-gray-700">バンド数 (1〜10組)</label>
+                                    <!-- デフォルト値を5に変更 -->
+                                    <input type="number" id="bandCount" value="5" min="1" max="10" 
+                                           class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                           oninput="handleBandCountChange()">
+                                </div>
+                                <div>
+                                    <label for="playTimeMin" class="block text-sm font-medium text-gray-700">各バンドの演奏時間 (分)</label>
+                                    <input type="number" id="playTimeMin" value="30" min="10" step="5" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                </div>
+                                <div>
+                                    <label for="changeoverTimeMin" class="block text-sm font-medium text-gray-700">各バンドの転換時間 (分)</label>
+                                    <input type="number" id="changeoverTimeMin" value="15" min="5" step="5" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                </div>
+                            </div>
+                        </fieldset>
+                        
+                        <!-- バンド名個別設定を追加 -->
+                        <fieldset class="mb-6 p-4 border border-gray-200 rounded-lg">
+                            <legend class="text-sm font-semibold px-2 text-gray-700">バンド名設定 (出演順)</legend>
+                            <div id="band-names-container" class="space-y-3">
+                                <!-- JSでバンド名入力フィールドを動的に挿入 -->
+                            </div>
+                        </fieldset>
+
+                        <!-- リハーサル方式・インターバル設定 -->
+                        <fieldset class="mb-6 p-4 border border-gray-200 rounded-lg">
+                            <legend class="text-sm font-semibold px-2 text-gray-700">リハーサル設定</legend>
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="rehearsalType" class="block text-sm font-medium text-gray-700">リハーサル方式</label>
+                                    <select id="rehearsalType" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <!-- 順序と表記を修正 -->
+                                        <option value="noRehearsal">リハ無し</option>
+                                        <option value="normalRehearsal">順リハ</option>
+                                        <option value="prepRehearsal">逆リハ</option>
+                                    </select>
+                                </div>
+                                
+                                <!-- リハーサル時間 -->
+                                <div>
+                                    <label for="rehearsalTimeMin" class="block text-sm font-medium text-gray-700">各バンドのRH時間 (分) <span class="text-xs text-gray-500">(転換込みの占有時間)</span></label>
+                                    <!-- デフォルト値を30分に変更 -->
+                                    <input type="number" id="rehearsalTimeMin" value="30" min="10" step="5" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                </div>
+
+                                <div id="interval-setting">
+                                    <label for="intervalBeforeOpenMin" class="block text-sm font-medium text-gray-700">RH終了からオープンまでのインターバル (分)</label>
+                                    <input type="number" id="intervalBeforeOpenMin" value="30" min="0" step="5" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                </div>
+                                
+                                <!-- 転換非表示オプション -->
+                                <div class="pt-2 border-t border-gray-200 mt-4">
+                                    <label class="flex items-center text-sm font-medium text-gray-700">
+                                        <input type="checkbox" id="hideChangeover" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500 mr-2" onchange="calculateSchedule()">
+                                        本番の転換項目を非表示にする
+                                    </label>
+                                </div>
+
+                                <p id="no-reha-message" class="text-red-500 text-sm hidden">※「リハ無し」選択時、RH時間・インターバル設定は無効化されます。</p>
+                            </div>
+                        </fieldset>
+                    </form>
+                </div>
+            </div>
+
+            <!-- タイムテーブル出力エリア (2/3 or full) -->
+            <div class="lg:col-span-2">
+                <div class="bg-white p-6 rounded-xl shadow-custom">
+                    <h2 class="text-xl font-bold mb-4 border-b pb-2 text-green-700">タイムテーブル</h2>
+
+                    <div class="flex justify-end mb-4 space-x-2" id="action-buttons">
+                        <button onclick="copyTimetable()" class="px-4 py-2 bg-indigo-500 text-white text-sm font-medium rounded-lg hover:bg-indigo-600 transition duration-150 shadow-md">
+                            コピー用テキストをクリップボードにコピー
+                        </button>
+                    </div>
+                    
+                    <div id="timetable-output" class="space-y-6">
+                        <!-- ここにタイムテーブルが挿入されます -->
+                        <div class="text-center p-8 bg-gray-50 rounded-lg text-gray-500">
+                            設定を入力するとタイムテーブルが表示されます。
+                        </div>
+                    </div>
+
+                    <div id="copy-success-message" class="mt-4 p-3 bg-green-100 text-green-700 rounded-lg hidden">
+                        タイムテーブルがクリップボードにコピーされました！
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- タイム処理ヘルパー関数 ---
+
+        /**
+         * "HH:MM" 形式の時刻文字列を、その日の午前0時からの総分数に変換します。
+         */
+        function timeToMinutes(timeStr) {
+            const parts = timeStr.split(':');
+            if (parts.length !== 2) return null;
+            const hours = parseInt(parts[0], 10);
+            const minutes = parseInt(parts[1], 10);
+            if (isNaN(hours) || isNaN(minutes)) return null;
+            return hours * 60 + minutes;
+        }
+
+        /**
+         * 総分数を "HH:MM" 形式の時刻文字列に変換し、24:00以降も継続して表示します。
+         */
+        function minutesToContinuousTime(minutes) {
+            const hours = Math.floor(minutes / 60);
+            const mins = minutes % 60;
+            return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+        }
+        
+        /**
+         * バンド名入力フィールドを生成・更新し、値をローカルストレージに保存します。
+         * @param {number} count - バンド数
+         */
+        function updateBandNameInputs(count) {
+            const container = document.getElementById('band-names-container');
+            let html = '';
+            
+            // バリデーションに引っかかる場合は処理をスキップ
+            if (count < 1 || count > 10) return;
+
+            for (let i = 1; i <= count; i++) {
+                // ローカルストレージから既存の値を取得、なければデフォルトを設定
+                const defaultBandName = `Band ${i}`;
+                const currentName = localStorage.getItem(`bandName_${i}`) || defaultBandName;
+
+                html += `
+                    <div>
+                        <label for="bandName_${i}" class="block text-xs font-medium text-gray-500">出演順 ${i}.</label>
+                        <input type="text" id="bandName_${i}" value="${currentName}" placeholder="${defaultBandName}" 
+                               class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-indigo-500 p-2"
+                               oninput="saveBandName(${i}, this.value)" onchange="saveBandName(${i}, this.value)">
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        /**
+         * バンド名が変更された際にローカルストレージに保存し、スケジュールを再計算します。
+         */
+        function saveBandName(index, name) {
+            localStorage.setItem(`bandName_${index}`, name);
+            calculateSchedule();
+        }
+
+        /**
+         * バンド数が変更された際に、入力フィールドを更新し、スケジュールを再計算します。
+         */
+        function handleBandCountChange() {
+            const bandCount = parseInt(document.getElementById('bandCount').value, 10);
+            updateBandNameInputs(bandCount);
+            calculateSchedule();
+        }
+
+        // --- メインロジック ---
+
+        /**
+         * UIから設定値を読み取ってスケジュールを計算し、表示を更新します。
+         */
+        function calculateSchedule() {
+            const openTimeStr = document.getElementById('openTime').value;
+            const startTimeStr = document.getElementById('startTime').value;
+            const bandCount = parseInt(document.getElementById('bandCount').value, 10);
+            const playTimeMin = parseInt(document.getElementById('playTimeMin').value, 10);
+            const changeoverTimeMin = parseInt(document.getElementById('changeoverTimeMin').value, 10);
+            const rehearsalType = document.getElementById('rehearsalType').value;
+            const rehearsalTimeMin = parseInt(document.getElementById('rehearsalTimeMin').value, 10);
+            const intervalBeforeOpenMin = parseInt(document.getElementById('intervalBeforeOpenMin').value, 10);
+            const hideChangeover = document.getElementById('hideChangeover').checked; // 転換非表示オプション
+
+            // リハ無しの場合のUI制御
+            const isNoRehearsal = rehearsalType === 'noRehearsal';
+            
+            // リハ関連の入力フィールドの制御
+            const intervalSetting = document.getElementById('interval-setting');
+            const rehearsalTimeInput = document.getElementById('rehearsalTimeMin');
+
+            intervalSetting.classList.toggle('opacity-50', isNoRehearsal);
+            document.getElementById('intervalBeforeOpenMin').disabled = isNoRehearsal;
+            rehearsalTimeInput.disabled = isNoRehearsal; // RH時間も無効化
+            document.getElementById('no-reha-message').classList.toggle('hidden', !isNoRehearsal);
+
+            // バリデーションチェック
+            if (bandCount < 1 || bandCount > 10 || playTimeMin < 5 || changeoverTimeMin < 0 || (!isNoRehearsal && rehearsalTimeMin < 5)) {
+                document.getElementById('timetable-output').innerHTML = `
+                    <p class="text-red-500 p-4 bg-red-50 rounded-lg">入力値が不正です。バンド数は1〜10、演奏時間・RH時間は5分以上を設定してください。</p>
+                `;
+                return;
+            }
+
+            const outputDiv = document.getElementById('timetable-output');
+            let outputHTML = '';
+            let outputText = ''; // コピー用テキスト
+
+            // バンド名のリスト取得 (ユーザー設定値を使用)
+            const bands = [];
+            for (let i = 1; i <= bandCount; i++) {
+                const input = document.getElementById(`bandName_${i}`);
+                let bandName = input ? input.value.trim() : `Band ${i}`;
+                if (bandName === '') bandName = `Band ${i}`;
+                bands.push(bandName); 
+            }
+
+            // --- 1. 本番 (Main Set) スケジュールの計算 ---
+
+            const startTimeMin = timeToMinutes(startTimeStr);
+            let currentTimeMin = startTimeMin;
+            const mainSchedule = [];
+
+            // 本番の計算
+            bands.forEach((band, index) => {
+                const setStart = currentTimeMin;
+                const setEnd = currentTimeMin + playTimeMin;
+
+                mainSchedule.push({
+                    type: 'performance',
+                    band: band,
+                    start: setStart,
+                    end: setEnd,
+                });
+                currentTimeMin = setEnd; // 演奏終了
+
+                // 最後のバンドでなければ転換時間を加える
+                if (index < bandCount - 1) {
+                    const changeStart = currentTimeMin;
+                    const changeEnd = currentTimeMin + changeoverTimeMin;
+                    mainSchedule.push({
+                        type: 'changeover',
+                        start: changeStart,
+                        end: changeEnd,
+                    });
+                    currentTimeMin = changeEnd; // 転換終了 = 次のバンド開始
+                }
+            });
+
+            const eventEndTime = currentTimeMin; // イベント終了予定時刻は計算するが、出力はしない
+
+            // --- 2. リハーサル (Rehearsal) スケジュールの計算 ---
+            let rehearsalSchedule = [];
+            let rehearsalStartTime = null;
+
+            if (!isNoRehearsal) {
+                const openTimeMin = timeToMinutes(openTimeStr);
+                
+                // RH終了時刻: オープン時間 - インターバル
+                let rehaEndMin = openTimeMin - intervalBeforeOpenMin;
+                
+                // RH順の決定
+                let rehaBands = [...bands];
+                if (rehearsalType === 'prepRehearsal') {
+                    // 逆リハ: 出演順の逆順 (N, N-1, ..., 1)
+                    rehaBands.reverse();
+                } else if (rehearsalType === 'normalRehearsal') {
+                    // 順リハ: (2, 3, ..., N, 1) の順にするため、1番目を最後に移動
+                    if (rehaBands.length > 1) {
+                         const firstBand = rehaBands.shift(); // 1番目を取り出す
+                         rehaBands.push(firstBand); // 最後に加える
+                    }
+                }
+
+                let currentRehaTime = rehaEndMin;
+                
+                // RHは逆順に計算していく (RH順の最後のバンドのRHから)
+                for (let i = rehaBands.length - 1; i >= 0; i--) {
+                    const band = rehaBands[i];
+                    
+                    // 1. RH本体の計算: 転換込みの占有時間として、rehearsalTimeMinの幅で割り当てる
+                    const rehaEnd = currentRehaTime;
+                    const rehaStart = currentRehaTime - rehearsalTimeMin; 
+                    
+                    rehearsalSchedule.unshift({ // 配列の先頭に追加
+                        type: 'rehearsal',
+                        band: band,
+                        start: rehaStart,
+                        end: rehaEnd,
+                    });
+                    currentRehaTime = rehaStart; 
+                }
+                rehearsalStartTime = currentRehaTime;
+            }
+
+
+            // --- 3. HTMLとテキストの生成 ---
+
+            // **リハーサル部分の出力**
+            if (!isNoRehearsal) {
+                const openTimeMin = timeToMinutes(openTimeStr);
+                const rehaEndMin = openTimeMin - intervalBeforeOpenMin;
+
+                rehearsalSchedule.forEach(item => {
+                    if (item.type === 'rehearsal') {
+                        // RH本体
+                        outputHTML += renderTimelineItem(`${minutesToContinuousTime(item.start)}-${minutesToContinuousTime(item.end)}`, `${item.band} RH`, 'border-l-4 border-indigo-400 pl-4');
+                        outputText += `${minutesToContinuousTime(item.start)}-${minutesToContinuousTime(item.end)}　${item.band} RH (転換込み ${rehearsalTimeMin}分)\n`;
+                    } 
+                });
+
+                // 会場準備 (RH終了時刻 == 会場準備開始時刻)
+                outputHTML += renderTimelineItem(`${minutesToContinuousTime(rehaEndMin)}-${openTimeStr}`, `会場準備`, 'bg-yellow-100 text-yellow-800 font-medium');
+                outputText += `${minutesToContinuousTime(rehaEndMin)}-${openTimeStr}　会場準備 (${intervalBeforeOpenMin}分)\n`;
+
+                // outputTextのセクション区切り
+                outputText += '\n'; 
+            }
+
+
+            // **本番部分の出力**
+
+            // オープン時間 - 括弧を削除
+            outputHTML += renderTimelineItem(openTimeStr, 'OPEN', 'bg-green-100 border-l-4 border-green-500 pl-4');
+            // 修正: コピー用テキストからハイフンを削除
+            outputText += `${openTimeStr}　OPEN\n`;
+
+            // スタート時間 - 括弧を削除
+            outputHTML += renderTimelineItem(startTimeStr, 'START', 'bg-green-100 border-l-4 border-green-500 pl-4');
+            // 修正: コピー用テキストからハイフンを削除
+            outputText += `${startTimeStr}　START\n`;
+
+            mainSchedule.forEach(item => {
+                if (item.type === 'performance') {
+                    // 演奏項目
+                    outputHTML += renderTimelineItem(`${minutesToContinuousTime(item.start)}-${minutesToContinuousTime(item.end)}`, `${item.band}`, 'border-l-4 border-green-400 pl-4');
+                    // テキストコピー: 分数表記を追加
+                    outputText += `${minutesToContinuousTime(item.start)}-${minutesToContinuousTime(item.end)}　${item.band} (${playTimeMin}分)\n`; 
+                } else if (item.type === 'changeover') {
+                    // 転換非表示オプションがOFFの場合のみ表示
+                    if (!hideChangeover) { 
+                        // HTML表示: シンプルな表示
+                        outputHTML += renderTimelineItem(`${minutesToContinuousTime(item.start)}-${minutesToContinuousTime(item.end)}`, `転換`, 'text-gray-500');
+                        // テキストコピー: 分数表記を追加
+                        outputText += `${minutesToContinuousTime(item.start)}-${minutesToContinuousTime(item.end)}　転換 (${changeoverTimeMin}分)\n`; 
+                    }
+                }
+            });
+
+            // UIの更新
+            outputDiv.innerHTML = outputHTML;
+            document.getElementById('timetable-output').setAttribute('data-copy-text', outputText);
+        }
+
+        /**
+         * タイムラインの項目をHTMLでレンダリングします。
+         */
+        function renderTimelineItem(time, content, extraClasses = '') {
+            // 幅を w-32 (128px) / sm:w-40 (160px) に拡張し、時間と内容の間にゆとりを持たせました。
+            // items-center に変更し、行の垂直方向の中心を揃えます。
+            return `
+                <div class="flex items-center py-2 border-b border-gray-100 hover:bg-gray-50 transition ${extraClasses}">
+                    <div class="w-32 sm:w-40 flex-shrink-0 text-lg font-mono text-gray-900 whitespace-nowrap">${time}</div>
+                    <div class="flex-grow text-gray-700">${content}</div>
+                </div>
+            `;
+        }
+        
+        /**
+         * セクションヘッダーをHTMLでレンダリングします。
+         */
+        function renderSectionHeader(title, colorClass) {
+            return `
+                <div class="mt-6 mb-3 p-2 bg-gray-100 rounded-lg shadow-sm">
+                    <h3 class="text-lg font-bold ${colorClass}">${title}</h3>
+                </div>
+            `;
+        }
+
+
+        /**
+         * タイムテーブルテキストをクリップボードにコピーします。
+         */
+        function copyTimetable() {
+            const textToCopy = document.getElementById('timetable-output').getAttribute('data-copy-text');
+
+            if (!textToCopy) {
+                // ユーザーにカスタムメッセージを表示 (alert() は使えないため、UIメッセージを使用)
+                const outputDiv = document.getElementById('timetable-output');
+                outputDiv.innerHTML = `
+                    <p class="text-red-500 p-4 bg-red-50 rounded-lg">コピー対象のタイムテーブルがまだ生成されていません。</p>
+                `;
+                console.error("コピー対象のテキストがありません。");
+                return;
+            }
+
+            // navigator.clipboard.writeTextが使用できない環境を考慮し、execCommand('copy')を使用
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            document.body.appendChild(textArea);
+            textArea.select();
+
+            try {
+                document.execCommand('copy');
+                const message = document.getElementById('copy-success-message');
+                message.classList.remove('hidden');
+                setTimeout(() => message.classList.add('hidden'), 3000);
+            } catch (err) {
+                console.error('コピーに失敗しました', err);
+                // エラー時はカスタムメッセージを表示
+                const outputDiv = document.getElementById('timetable-output');
+                outputDiv.innerHTML = `
+                    <p class="text-red-500 p-4 bg-red-50 rounded-lg">コピーに失敗しました。ブラウザの設定を確認してください。</p>
+                `;
+            } finally {
+                document.body.removeChild(textArea);
+            }
+        }
+
+        // ページロード時に初回計算を実行
+        window.onload = () => {
+            // 初回ロード時にバンド数に基づいて入力フィールドを生成
+            const initialBandCount = parseInt(document.getElementById('bandCount').value, 10);
+            updateBandNameInputs(initialBandCount);
+            // その後、スケジュールを計算
+            calculateSchedule();
+        };
+    </script>
+</body>
+</html>
